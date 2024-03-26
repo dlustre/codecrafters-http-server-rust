@@ -32,10 +32,11 @@ fn handle_request(mut stream: &mut TcpStream) {
         let mut header = String::new();
 
         while buf_reader.read_line(&mut header).unwrap_or(0) > 2 {
-            println!("header: {}", header);
-            let (key, value) = header.split_once(": ").unwrap_or_default();
-            println!("key: {} | val: {} | end val", key, value);
+            println!("line: `{}`", header);
+            let (key, value) = header.trim_end().split_once(": ").unwrap();
+            println!("key: `{}` val: `{}`", key, value);
             headers.insert(key.to_owned(), value.to_owned());
+            header.clear();
         }
 
         let request = http::parse_http(request_line);
