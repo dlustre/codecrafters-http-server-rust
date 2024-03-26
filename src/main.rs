@@ -14,26 +14,35 @@ use itertools::Itertools;
 mod http;
 
 fn main() {
-    let (flag, directory_str) = env::args()
-        .skip(1)
-        .collect_tuple()
-        .expect("Usage: ./your_server --directory <directory>");
+    let args: Vec<String> = env::args().skip(1).collect();
+    let directory = args
+        .as_slice()
+        .into_iter()
+        .collect_tuple::<(&String, &String)>()
+        .and_then(|(flag, directory_str)| {
+            if flag == "--directory" {
+                Some(PathBuf::from(directory_str))
+            } else {
+                None
+            }
+        });
 
-    if flag != "--directory" {
-        panic!("Usage: ./your_server --directory <directory>")
+    if let Some(dir) = &directory {
+        println!("directory: {}", dir.display());
+    } else {
+        println!("No directory specified, using default configuration.");
     }
-
-    let directory = PathBuf::from(&directory_str);
-
-    println!("directory: {}", directory.display());
 
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
 
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                let dir_clone = directory.clone();
-                thread::spawn(move || handle_connection(&mut stream, dir_clone));
+                if let Some(dir) = directory.clone() {
+                    thread::spawn(move || handle_connection(&mut stream, Some(dir)));
+                } else {
+                    thread::spawn(move || handle_connection(&mut stream, None));
+                }
             }
             Err(e) => {
                 println!("error: {}", e);
@@ -42,7 +51,7 @@ fn main() {
     }
 }
 
-fn handle_connection(mut stream: &mut TcpStream, directory: PathBuf) {
+fn handle_connection(mut stream: &mut TcpStream, directory: Option<PathBuf>) {
     let mut buf_reader = io::BufReader::new(&mut stream);
     let mut request_line = String::new();
 
@@ -79,8 +88,9 @@ fn handle_connection(mut stream: &mut TcpStream, directory: PathBuf) {
                     }
                 }
                 file_req if file_req.starts_with("/file/") => {
-                    let file_path =
-                        directory.join(file_req.strip_prefix("/file/").unwrap_or_default());
+                    let file_path = directory
+                        .expect("no directory provided")
+                        .join(file_req.strip_prefix("/file/").unwrap_or_default());
 
                     match read_file(&file_path) {
                         Ok(contents) => Response {
