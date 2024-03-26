@@ -60,9 +60,9 @@ fn handle_connection(mut stream: &mut TcpStream, directory: Option<PathBuf>) {
         let mut header = String::new();
 
         while buf_reader.read_line(&mut header).unwrap_or(0) > 2 {
-            println!("line: `{}`", header);
+            // println!("line: `{}`", header);
             let (key, value) = header.trim_end().split_once(": ").unwrap();
-            println!("key: `{}` val: `{}`", key, value);
+            // println!("key: `{}` val: `{}`", key, value);
             headers.insert(key.to_owned(), value.to_owned());
             header.clear();
         }
@@ -87,11 +87,15 @@ fn handle_connection(mut stream: &mut TcpStream, directory: Option<PathBuf>) {
                         body: user_agent.cloned(),
                     }
                 }
-                file_req if file_req.starts_with("/file/") => {
+                file_req if file_req.starts_with("/files/") => {
+                    println!(
+                        "getting file `{}`",
+                        file_req.strip_prefix("/files/").unwrap()
+                    );
                     let file_path = directory
                         .expect("no directory provided")
-                        .join(file_req.strip_prefix("/file/").unwrap_or_default());
-
+                        .join(file_req.strip_prefix("/files/").unwrap_or_default());
+                    println!("path: {}", file_path.display());
                     match read_file(&file_path) {
                         Ok(contents) => Response {
                             status: http::Status::Ok,
@@ -99,12 +103,15 @@ fn handle_connection(mut stream: &mut TcpStream, directory: Option<PathBuf>) {
                             version: request.version,
                             body: Some(contents),
                         },
-                        Err(_) => Response {
-                            status: http::Status::NotFound,
-                            content_type: None,
-                            version: request.version,
-                            body: None,
-                        },
+                        Err(e) => {
+                            println!("error getting file: {}", e);
+                            Response {
+                                status: http::Status::NotFound,
+                                content_type: None,
+                                version: request.version,
+                                body: None,
+                            }
+                        }
                     }
                 }
                 echo_req if echo_req.starts_with("/echo/") => Response {
@@ -141,9 +148,11 @@ fn read_file(file_path: &Path) -> io::Result<String> {
     if file_path.exists() {
         let mut file = File::open(file_path)?;
         let mut contents = String::new();
+        println!("reading from file...");
         file.read_to_string(&mut contents)?;
         Ok(contents)
     } else {
+        println!("File not found");
         Err(io::Error::new(io::ErrorKind::NotFound, "File not found"))
     }
 }
