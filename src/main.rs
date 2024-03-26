@@ -1,15 +1,14 @@
-// uncomment this block to pass the first stage
 use std::{
     io::{self, BufRead, Write},
     net::{TcpListener, TcpStream},
 };
 
+use http::Response;
+use itertools::Itertools;
+
 mod http;
 
 fn main() {
-    // you can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("logs from your program will appear here!");
-
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
 
     for stream in listener.incoming() {
@@ -32,15 +31,37 @@ fn handle_request(mut stream: &mut TcpStream) {
         Ok(_) => {
             let request = http::parse_http(&request_buffer);
 
-            let response = {
-                if request.path == "/".to_string() {
-                    http::response(http::HTTPStatus::OK, "")
-                } else {
-                    http::response(http::HTTPStatus::NotFound, "")
+            let response = match request.method {
+                http::Method::GET => {
+                    let path_segments = request.path.split("/").collect_vec();
+
+                    match path_segments[..] {
+                        ["", ""] => Response {
+                            status: http::Status::Ok,
+                            version: request.version,
+                            body: None,
+                        },
+                        ["", "echo", ..] => {
+                            let echo_content = path_segments[2..].join(" ");
+                            Response {
+                                status: http::Status::Ok,
+                                version: request.version,
+                                body: Some(echo_content),
+                            }
+                        }
+                        _ => Response {
+                            status: http::Status::NotFound,
+                            version: request.version,
+                            body: None,
+                        },
+                    }
                 }
+                http::Method::POST => todo!(),
             };
 
-            stream.write_all(response.as_bytes()).unwrap();
+            println!("{}", response.to_string());
+
+            write!(stream, "{}", response.to_string()).unwrap()
         }
         Err(e) => println!("Error reading from stream: {}", e),
     }
