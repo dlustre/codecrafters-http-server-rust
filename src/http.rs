@@ -78,6 +78,8 @@ impl fmt::Display for Response {
             write!(f, "Content-Length: {}\r\n", body.len())?;
             write!(f, "\r\n")?;
             write!(f, "{body}")?;
+        } else {
+            write!(f, "\r\n")?;
         }
 
         Ok(())
