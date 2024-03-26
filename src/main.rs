@@ -1,10 +1,10 @@
 use std::{
+    fmt::format,
     io::{self, BufRead, Write},
     net::{TcpListener, TcpStream},
 };
 
 use http::Response;
-use itertools::Itertools;
 
 mod http;
 
@@ -27,42 +27,40 @@ fn handle_request(mut stream: &mut TcpStream) {
     let mut buf_reader = io::BufReader::new(&mut stream);
     let mut request_buffer = vec![];
 
-    match buf_reader.read_until(b'\n', &mut request_buffer) {
-        Ok(_) => {
-            let request = http::parse_http(&request_buffer);
+    if let Ok(_) = buf_reader.read_until(b'\n', &mut request_buffer) {
+        let request = http::parse_http(&request_buffer);
 
-            let response = match request.method {
-                http::Method::GET => {
-                    let path_segments = request.path.split("/").collect_vec();
-
-                    match path_segments[..] {
-                        ["", ""] => Response {
+        let response = match request.method {
+            http::Method::GET => match request.path.as_str() {
+                "/" => Response {
+                    status: http::Status::Ok,
+                    version: request.version,
+                    body: None,
+                },
+                path => {
+                    if path.starts_with("/echo/") {
+                        Response {
                             status: http::Status::Ok,
                             version: request.version,
-                            body: None,
-                        },
-                        ["", "echo", ..] => {
-                            let echo_content = path_segments[2..].join(" ");
-                            Response {
-                                status: http::Status::Ok,
-                                version: request.version,
-                                body: Some(echo_content),
-                            }
+                            body: Some(path.strip_prefix("/echo/").unwrap_or_default().to_string()),
                         }
-                        _ => Response {
+                    } else {
+                        Response {
                             status: http::Status::NotFound,
                             version: request.version,
                             body: None,
-                        },
+                        }
                     }
                 }
-                http::Method::POST => todo!(),
-            };
+            },
+            http::Method::POST => todo!(),
+        };
 
-            println!("{}", response.to_string());
+        println!("{}", response.to_string());
 
-            write!(stream, "{}", response.to_string()).unwrap()
-        }
-        Err(e) => println!("Error reading from stream: {}", e),
+        let response_str = format!("{}", response);
+        stream.write_all(response_str.as_bytes()).unwrap();
+    } else {
+        println!("Error reading from stream");
     }
 }
