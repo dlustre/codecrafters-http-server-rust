@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     io::{self, BufRead, Write},
     net::{TcpListener, TcpStream},
+    thread,
 };
 
 use http::Response;
@@ -14,7 +15,7 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                handle_request(&mut stream);
+                thread::spawn(move || handle_connection(&mut stream));
             }
             Err(e) => {
                 println!("error: {}", e);
@@ -23,7 +24,7 @@ fn main() {
     }
 }
 
-fn handle_request(mut stream: &mut TcpStream) {
+fn handle_connection(mut stream: &mut TcpStream) {
     let mut buf_reader = io::BufReader::new(&mut stream);
     let mut request_line = String::new();
 
