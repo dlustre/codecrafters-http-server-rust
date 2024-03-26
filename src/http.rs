@@ -21,6 +21,24 @@ impl Status {
     }
 }
 
+pub enum ContentType {
+    Text,
+    Application,
+}
+
+impl fmt::Display for ContentType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let display = match self {
+            Self::Text => "text/plain",
+            Self::Application => "application/octet-stream",
+        };
+
+        write!(f, "{}", display)?;
+
+        Ok(())
+    }
+}
+
 pub enum Method {
     GET,
     POST,
@@ -59,6 +77,7 @@ pub fn parse_http(req: String) -> Request {
 
 pub struct Response {
     pub status: Status,
+    pub content_type: Option<ContentType>,
     pub version: String,
     pub body: Option<String>,
 }
@@ -73,13 +92,14 @@ impl fmt::Display for Response {
             self.status.message()
         )?;
 
-        if let Some(body) = &self.body {
-            write!(f, "Content-Type: text/plain\r\n")?;
-            write!(f, "Content-Length: {}\r\n", body.len())?;
-            write!(f, "\r\n")?;
-            write!(f, "{body}")?;
-        } else {
-            write!(f, "\r\n")?;
+        match (&self.content_type, &self.body) {
+            (Some(content_type), Some(body)) => {
+                write!(f, "Content-Type: {}\r\n", content_type)?;
+                write!(f, "Content-Length: {}\r\n\r\n{body}", body.len())?;
+            }
+            _ => {
+                write!(f, "\r\n")?;
+            }
         }
 
         Ok(())
