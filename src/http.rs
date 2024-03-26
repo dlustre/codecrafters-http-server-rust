@@ -1,5 +1,4 @@
 use core::{fmt, panic};
-use std::collections::HashMap;
 
 pub enum Status {
     Ok,
@@ -31,12 +30,12 @@ pub struct Request {
     pub method: Method,
     pub path: String,
     pub version: String,
-    pub headers: HashMap<String, String>,
+    // pub headers: HashMap<String, String>,
 }
 
-pub fn parse_http(req: &[u8]) -> Request {
-    let req_str = String::from_utf8_lossy(req);
-    let mut lines = req_str.lines();
+pub fn parse_http(req: String) -> Request {
+    // let req_str = String::from_utf8_lossy(req);
+    let mut lines = req.lines();
 
     let start_line = lines.next().expect("Request was empty");
     let parts: Vec<&str> = start_line.split_whitespace().collect();
@@ -50,23 +49,11 @@ pub fn parse_http(req: &[u8]) -> Request {
         _ => panic!("Unsupported HTTP Method"),
     };
 
-    let mut headers = HashMap::new();
-
-    while let Some(line) = lines.next() {
-        if line.is_empty() {
-            break;
-        } else {
-            println!("line = `{line}`");
-            let (name, value) = line.split_once(": ").unwrap();
-            headers.insert(name.to_owned(), value.to_owned());
-        }
-    }
-
     Request {
         method,
         path: parts[1].to_string(),
         version: parts[2].to_string(),
-        headers,
+        // headers,
     }
 }
 

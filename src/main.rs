@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     io::{self, BufRead, Write},
     net::{TcpListener, TcpStream},
 };
@@ -24,10 +25,20 @@ fn main() {
 
 fn handle_request(mut stream: &mut TcpStream) {
     let mut buf_reader = io::BufReader::new(&mut stream);
-    let mut request_buffer = vec![];
+    let mut request_line = String::new();
 
-    if let Ok(_) = buf_reader.read_until(b'\n', &mut request_buffer) {
-        let request = http::parse_http(&request_buffer);
+    if let Ok(_) = buf_reader.read_line(&mut request_line) {
+        let mut headers = HashMap::new();
+        let mut header = String::new();
+
+        while buf_reader.read_line(&mut header).unwrap_or(0) > 2 {
+            println!("header: {}", header);
+            let (key, value) = header.split_once(": ").unwrap_or_default();
+            println!("key: {} | val: {} | end val", key, value);
+            headers.insert(key.to_owned(), value.to_owned());
+        }
+
+        let request = http::parse_http(request_line);
 
         let response = match request.method {
             http::Method::GET => match request.path.as_str() {
@@ -37,7 +48,7 @@ fn handle_request(mut stream: &mut TcpStream) {
                     body: None,
                 },
                 "/user-agent" => {
-                    let user_agent = request.headers.get("User-Agent");
+                    let user_agent = headers.get("User-Agent");
 
                     Response {
                         status: http::Status::Ok,
