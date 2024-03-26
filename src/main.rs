@@ -1,5 +1,4 @@
 use std::{
-    fmt::format,
     io::{self, BufRead, Write},
     net::{TcpListener, TcpStream},
 };
@@ -37,6 +36,15 @@ fn handle_request(mut stream: &mut TcpStream) {
                     version: request.version,
                     body: None,
                 },
+                "/user-agent" => {
+                    let user_agent = request.headers.get("User-Agent");
+
+                    Response {
+                        status: http::Status::Ok,
+                        version: request.version,
+                        body: user_agent.cloned(),
+                    }
+                }
                 path => {
                     if path.starts_with("/echo/") {
                         Response {
