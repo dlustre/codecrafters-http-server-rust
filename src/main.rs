@@ -84,7 +84,7 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
                 println!("path: {}", file_path.display());
                 match read_file(&file_path) {
                     Ok(contents) => Response {
-                        status: http::Status::Created,
+                        status: http::Status::Ok,
                         content_type: Some(http::ContentType::Application),
                         version: request.version,
                         body: Some(contents),
@@ -129,7 +129,7 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
                     .join(file_req.strip_prefix("/files/").unwrap_or_default());
                 match save_file(&file_path, &request.body.unwrap()) {
                     Ok(_) => Response {
-                        status: http::Status::Ok,
+                        status: http::Status::Created,
                         content_type: None,
                         version: request.version,
                         body: None,
