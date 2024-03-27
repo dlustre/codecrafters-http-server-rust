@@ -1,7 +1,14 @@
-use core::{fmt, panic};
+use core::fmt;
+use std::{
+    collections::HashMap,
+    io::{self, BufRead, BufReader, Read},
+    net::TcpStream,
+};
 
 pub enum Status {
     Ok,
+    Created,
+    InternalServerError,
     NotFound,
 }
 
@@ -9,6 +16,8 @@ impl Status {
     fn code(&self) -> usize {
         match self {
             Self::Ok => 200,
+            Self::Created => 201,
+            Self::InternalServerError => 500,
             Self::NotFound => 404,
         }
     }
@@ -16,6 +25,8 @@ impl Status {
     fn message(&self) -> &str {
         match self {
             Self::Ok => "OK",
+            Self::Created => "Created",
+            Self::InternalServerError => "Internal Server Error",
             Self::NotFound => "Not Found",
         }
     }
@@ -48,31 +59,72 @@ pub struct Request {
     pub method: Method,
     pub path: String,
     pub version: String,
-    // pub headers: HashMap<String, String>,
+    pub headers: HashMap<String, String>,
+    pub body: Option<String>,
 }
 
-pub fn parse_http(req: String) -> Request {
-    // let req_str = String::from_utf8_lossy(req);
-    let mut lines = req.lines();
+pub fn parse_http(stream: &mut BufReader<&TcpStream>) -> io::Result<Request> {
+    let mut request_line = String::new();
+    stream.read_line(&mut request_line)?;
 
-    let start_line = lines.next().expect("Request was empty");
-    let parts: Vec<&str> = start_line.split_whitespace().collect();
+    let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
     if parts.len() != 3 {
-        panic!("Invalid request line");
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Invalid request line",
+        ));
     }
 
     let method = match parts[0] {
         "GET" => Method::GET,
         "POST" => Method::POST,
-        _ => panic!("Unsupported HTTP Method"),
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unsupported HTTP Method",
+            ))
+        }
     };
 
-    Request {
+    let mut headers = HashMap::new();
+    let mut header = String::new();
+
+    // parse headers
+    while stream.read_line(&mut header)? > 0 {
+        let trimmed = header.trim();
+        if trimmed.is_empty() {
+            break; // End of headers
+        }
+        let (key, value) = trimmed.split_once(": ").ok_or(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Invalid header line",
+        ))?;
+        headers.insert(key.to_string(), value.to_string());
+        header.clear();
+    }
+
+    // read the body based on `Content-Length`
+    let mut body = String::new();
+    if let Some(content_length_str) = headers.get("Content-Length") {
+        if let Ok(content_length) = content_length_str.parse::<usize>() {
+            let mut body_bytes = vec![0; content_length];
+            stream.read_exact(&mut body_bytes)?;
+            body = String::from_utf8_lossy(&body_bytes).to_string();
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid Content-Length header",
+            ));
+        }
+    }
+
+    Ok(Request {
         method,
         path: parts[1].to_string(),
         version: parts[2].to_string(),
-        // headers,
-    }
+        headers,
+        body: Some(body),
+    })
 }
 
 pub struct Response {

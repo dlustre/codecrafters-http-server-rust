@@ -1,8 +1,7 @@
 use std::{
-    collections::HashMap,
     env,
     fs::File,
-    io::{self, BufRead, Read, Write},
+    io::{self, Read, Write},
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     thread,
@@ -51,97 +50,111 @@ fn main() {
     }
 }
 
-fn handle_connection(mut stream: &mut TcpStream, directory: Option<PathBuf>) {
-    let mut buf_reader = io::BufReader::new(&mut stream);
-    let mut request_line = String::new();
+fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
+    let mut buf_reader = io::BufReader::new(&*stream);
 
-    if let Ok(_) = buf_reader.read_line(&mut request_line) {
-        let mut headers = HashMap::new();
-        let mut header = String::new();
+    let request = http::parse_http(&mut buf_reader).unwrap();
 
-        while buf_reader.read_line(&mut header).unwrap_or(0) > 2 {
-            // println!("line: `{}`", header);
-            let (key, value) = header.trim_end().split_once(": ").unwrap();
-            // println!("key: `{}` val: `{}`", key, value);
-            headers.insert(key.to_owned(), value.to_owned());
-            header.clear();
-        }
+    let response = match request.method {
+        http::Method::GET => match request.path.as_str() {
+            "/" => Response {
+                status: http::Status::Ok,
+                content_type: None,
+                version: request.version,
+                body: None,
+            },
+            "/user-agent" => {
+                let user_agent = request.headers.get("User-Agent");
 
-        let request = http::parse_http(request_line);
-
-        let response = match request.method {
-            http::Method::GET => match request.path.as_str() {
-                "/" => Response {
-                    status: http::Status::Ok,
-                    content_type: None,
-                    version: request.version,
-                    body: None,
-                },
-                "/user-agent" => {
-                    let user_agent = headers.get("User-Agent");
-
-                    Response {
-                        status: http::Status::Ok,
-                        content_type: Some(http::ContentType::Text),
-                        version: request.version,
-                        body: user_agent.cloned(),
-                    }
-                }
-                file_req if file_req.starts_with("/files/") => {
-                    println!(
-                        "getting file `{}`",
-                        file_req.strip_prefix("/files/").unwrap()
-                    );
-                    let file_path = directory
-                        .expect("no directory provided")
-                        .join(file_req.strip_prefix("/files/").unwrap_or_default());
-                    println!("path: {}", file_path.display());
-                    match read_file(&file_path) {
-                        Ok(contents) => Response {
-                            status: http::Status::Ok,
-                            content_type: Some(http::ContentType::Application),
-                            version: request.version,
-                            body: Some(contents),
-                        },
-                        Err(e) => {
-                            println!("error getting file: {}", e);
-                            Response {
-                                status: http::Status::NotFound,
-                                content_type: None,
-                                version: request.version,
-                                body: None,
-                            }
-                        }
-                    }
-                }
-                echo_req if echo_req.starts_with("/echo/") => Response {
+                Response {
                     status: http::Status::Ok,
                     content_type: Some(http::ContentType::Text),
                     version: request.version,
-                    body: Some(
-                        echo_req
-                            .strip_prefix("/echo/")
-                            .unwrap_or_default()
-                            .to_string(),
-                    ),
-                },
-                _ => Response {
-                    status: http::Status::NotFound,
-                    content_type: None,
-                    version: request.version,
-                    body: None,
-                },
+                    body: user_agent.cloned(),
+                }
+            }
+            file_req if file_req.starts_with("/files/") => {
+                println!(
+                    "getting file `{}`",
+                    file_req.strip_prefix("/files/").unwrap()
+                );
+                let file_path = directory
+                    .expect("no directory provided")
+                    .join(file_req.strip_prefix("/files/").unwrap_or_default());
+                println!("path: {}", file_path.display());
+                match read_file(&file_path) {
+                    Ok(contents) => Response {
+                        status: http::Status::Created,
+                        content_type: Some(http::ContentType::Application),
+                        version: request.version,
+                        body: Some(contents),
+                    },
+                    Err(e) => {
+                        println!("error getting file: {}", e);
+                        Response {
+                            status: http::Status::NotFound,
+                            content_type: None,
+                            version: request.version,
+                            body: None,
+                        }
+                    }
+                }
+            }
+            echo_req if echo_req.starts_with("/echo/") => Response {
+                status: http::Status::Ok,
+                content_type: Some(http::ContentType::Text),
+                version: request.version,
+                body: Some(
+                    echo_req
+                        .strip_prefix("/echo/")
+                        .unwrap_or_default()
+                        .to_string(),
+                ),
             },
-            http::Method::POST => todo!(),
-        };
+            _ => Response {
+                status: http::Status::NotFound,
+                content_type: None,
+                version: request.version,
+                body: None,
+            },
+        },
+        http::Method::POST => match request.path.as_str() {
+            file_req if file_req.starts_with("/files/") => {
+                println!(
+                    "posting file `{}`...",
+                    file_req.strip_prefix("/files/").unwrap()
+                );
+                let file_path = directory
+                    .expect("no directory provided")
+                    .join(file_req.strip_prefix("/files/").unwrap_or_default());
+                match save_file(&file_path, &request.body.unwrap()) {
+                    Ok(_) => Response {
+                        status: http::Status::Ok,
+                        content_type: None,
+                        version: request.version,
+                        body: None,
+                    },
+                    Err(_) => Response {
+                        status: http::Status::InternalServerError,
+                        content_type: None,
+                        version: request.version,
+                        body: None,
+                    },
+                }
+            }
+            _ => Response {
+                status: http::Status::NotFound,
+                content_type: None,
+                version: request.version,
+                body: None,
+            },
+        },
+    };
 
-        println!("{}", response.to_string());
+    println!("{}", response.to_string());
 
-        let response_str = format!("{}", response);
-        stream.write_all(response_str.as_bytes()).unwrap();
-    } else {
-        println!("Error reading from stream");
-    }
+    let response_str = format!("{}", response);
+    stream.write_all(response_str.as_bytes()).unwrap();
 }
 
 fn read_file(file_path: &Path) -> io::Result<String> {
@@ -155,4 +168,12 @@ fn read_file(file_path: &Path) -> io::Result<String> {
         println!("File not found");
         Err(io::Error::new(io::ErrorKind::NotFound, "File not found"))
     }
+}
+
+fn save_file(file_path: &Path, buf: &String) -> io::Result<()> {
+    let mut file = File::create(file_path)?;
+
+    file.write_all(buf.as_bytes())?;
+
+    Ok(())
 }
