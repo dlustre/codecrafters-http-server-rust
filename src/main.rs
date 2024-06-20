@@ -53,11 +53,20 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
     let mut buf_reader = io::BufReader::new(&*stream);
 
     let request = http::parse_http(&mut buf_reader).unwrap();
-    let content_encoding: Option<Encoding> = match request.headers.get("Accept-Encoding") {
-        Some(encoding) => match encoding.as_str() {
-            "gzip" => Some(Encoding::Gzip),
-            _ => None,
-        },
+    let encodings: Vec<Encoding> = match request.headers.get("Accept-Encoding") {
+        Some(maybe_encodings) => maybe_encodings
+            .split(", ")
+            .filter_map(|e| match e {
+                "gzip" => Some(Encoding::Gzip),
+                _ => None,
+            })
+            .collect(),
+        None => vec![],
+    };
+    let content_encoding = match encodings.iter().find_map(|e| match *e {
+        Encoding::Gzip => Some(Encoding::Gzip),
+    }) {
+        Some(e) => Some(e),
         None => None,
     };
 
