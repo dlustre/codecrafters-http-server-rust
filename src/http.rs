@@ -5,6 +5,8 @@ use std::{
     net::TcpStream,
 };
 
+use flate2::{write::GzEncoder, Compression};
+
 pub enum Status {
     Ok,
     Created,
@@ -151,29 +153,49 @@ pub struct Response {
     pub body: Option<String>,
 }
 
-impl fmt::Display for Response {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} {} {}\r\n",
-            self.version,
-            self.status.code(),
-            self.status.message()
-        )?;
+use std::io::Write;
+
+impl Response {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut response_str = String::new();
+        response_str.push_str(
+            format!(
+                "{} {} {}\r\n",
+                self.version,
+                self.status.code(),
+                self.status.message()
+            )
+            .as_str(),
+        );
 
         match (&self.content_type, &self.body, &self.content_encoding) {
-            (Some(content_type), Some(body), maybe_content_encoding) => {
-                if let Some(content_encoding) = maybe_content_encoding {
-                    write!(f, "Content-Encoding: {}\r\n", content_encoding)?;
-                }
-                write!(f, "Content-Type: {}\r\n", content_type)?;
-                write!(f, "Content-Length: {}\r\n\r\n{body}", body.len())?;
+            (Some(content_type), Some(body), Some(content_encoding)) => {
+                response_str
+                    .push_str(format!("Content-Encoding: {}\r\n", content_encoding).as_str());
+                response_str.push_str(format!("Content-Type: {}\r\n", content_type).as_str());
+
+                // Gzip the body
+                let mut encoder = GzEncoder::new(vec![], Compression::default());
+                encoder.write_all(body.as_bytes()).unwrap();
+                let compressed = encoder.finish().unwrap();
+
+                // Length of the compressed body
+                let len = compressed.len();
+                response_str.push_str(format!("Content-Length: {}\r\n\r\n", len).as_str());
+                let mut bytes = response_str.into_bytes();
+                bytes.extend(compressed);
+                return bytes;
+            }
+            (Some(content_type), Some(body), None) => {
+                response_str.push_str(format!("Content-Type: {}\r\n", content_type).as_str());
+                response_str
+                    .push_str(format!("Content-Length: {}\r\n\r\n{body}", body.len()).as_str());
             }
             _ => {
-                write!(f, "\r\n")?;
+                response_str.push_str(format!("\r\n").as_str());
             }
         }
 
-        Ok(())
+        response_str.into_bytes()
     }
 }

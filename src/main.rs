@@ -63,6 +63,8 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
             .collect(),
         None => vec![],
     };
+
+    // TODO: just a hack since gzip is the only thing implemented
     let content_encoding = match encodings.iter().find_map(|e| match *e {
         Encoding::Gzip => Some(Encoding::Gzip),
     }) {
@@ -175,10 +177,7 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
         },
     };
 
-    println!("{}", response.to_string());
-
-    let response_str = format!("{}", response);
-    stream.write_all(response_str.as_bytes()).unwrap();
+    stream.write_all(response.as_bytes().as_slice()).unwrap();
 }
 
 fn read_file(file_path: &Path) -> io::Result<String> {
