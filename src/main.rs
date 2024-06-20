@@ -7,15 +7,14 @@ use std::{
     thread,
 };
 
-use http::Response;
+use http::{Encoding, Response};
 use itertools::Itertools;
 
 mod http;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
-    let directory = args
-        .as_slice()
+    let directory = args[..]
         .into_iter()
         .collect_tuple::<(&String, &String)>()
         .and_then(|(flag, directory_str)| {
@@ -54,10 +53,18 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
     let mut buf_reader = io::BufReader::new(&*stream);
 
     let request = http::parse_http(&mut buf_reader).unwrap();
+    let content_encoding: Option<Encoding> = match request.headers.get("Accept-Encoding") {
+        Some(encoding) => match encoding.as_str() {
+            "gzip" => Some(Encoding::Gzip),
+            _ => None,
+        },
+        None => None,
+    };
 
     let response = match request.method {
         http::Method::GET => match request.path.as_str() {
             "/" => Response {
+                content_encoding,
                 status: http::Status::Ok,
                 content_type: None,
                 version: request.version,
@@ -67,6 +74,7 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
                 let user_agent = request.headers.get("User-Agent");
 
                 Response {
+                    content_encoding,
                     status: http::Status::Ok,
                     content_type: Some(http::ContentType::Text),
                     version: request.version,
@@ -84,6 +92,7 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
                 println!("path: {}", file_path.display());
                 match read_file(&file_path) {
                     Ok(contents) => Response {
+                        content_encoding,
                         status: http::Status::Ok,
                         content_type: Some(http::ContentType::Application),
                         version: request.version,
@@ -92,6 +101,7 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
                     Err(e) => {
                         println!("error getting file: {}", e);
                         Response {
+                            content_encoding,
                             status: http::Status::NotFound,
                             content_type: None,
                             version: request.version,
@@ -101,6 +111,7 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
                 }
             }
             echo_req if echo_req.starts_with("/echo/") => Response {
+                content_encoding,
                 status: http::Status::Ok,
                 content_type: Some(http::ContentType::Text),
                 version: request.version,
@@ -112,6 +123,7 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
                 ),
             },
             _ => Response {
+                content_encoding,
                 status: http::Status::NotFound,
                 content_type: None,
                 version: request.version,
@@ -129,12 +141,14 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
                     .join(file_req.strip_prefix("/files/").unwrap_or_default());
                 match save_file(&file_path, &request.body.unwrap()) {
                     Ok(_) => Response {
+                        content_encoding,
                         status: http::Status::Created,
                         content_type: None,
                         version: request.version,
                         body: None,
                     },
                     Err(_) => Response {
+                        content_encoding,
                         status: http::Status::InternalServerError,
                         content_type: None,
                         version: request.version,
@@ -143,6 +157,7 @@ fn handle_connection(stream: &mut TcpStream, directory: Option<PathBuf>) {
                 }
             }
             _ => Response {
+                content_encoding,
                 status: http::Status::NotFound,
                 content_type: None,
                 version: request.version,

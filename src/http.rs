@@ -127,8 +127,25 @@ pub fn parse_http(stream: &mut BufReader<&TcpStream>) -> io::Result<Request> {
     })
 }
 
+pub enum Encoding {
+    Gzip,
+}
+
+impl fmt::Display for Encoding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let display = match self {
+            Self::Gzip => "gzip",
+        };
+
+        write!(f, "{}", display)?;
+
+        Ok(())
+    }
+}
+
 pub struct Response {
     pub status: Status,
+    pub content_encoding: Option<Encoding>,
     pub content_type: Option<ContentType>,
     pub version: String,
     pub body: Option<String>,
@@ -144,8 +161,11 @@ impl fmt::Display for Response {
             self.status.message()
         )?;
 
-        match (&self.content_type, &self.body) {
-            (Some(content_type), Some(body)) => {
+        match (&self.content_type, &self.body, &self.content_encoding) {
+            (Some(content_type), Some(body), maybe_content_encoding) => {
+                if let Some(content_encoding) = maybe_content_encoding {
+                    write!(f, "Content-Encoding: {}\r\n", content_encoding)?;
+                }
                 write!(f, "Content-Type: {}\r\n", content_type)?;
                 write!(f, "Content-Length: {}\r\n\r\n{body}", body.len())?;
             }
